@@ -17,3 +17,7 @@ Buzzer
 I also addedd a buzzer to indicate that calibration is finished and the motors are ready to be started. It also starts beeping when the battery voltage drops below a certain threshold.
 
 Head over to https://fabiangand.com/categories/drone/ for more.
+
+
+
+_Please note: You are solely responsible for your own safety._
