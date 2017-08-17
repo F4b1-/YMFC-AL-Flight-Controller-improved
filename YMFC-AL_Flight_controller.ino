@@ -1,3 +1,10 @@
+#include <PinChangeInterrupt.h>
+#include <PinChangeInterruptBoards.h>
+#include <PinChangeInterruptPins.h>
+#include <PinChangeInterruptSettings.h>
+
+
+
 //////////////////////////////////////////////////////////////////////////////////////
 //Terms of use
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -18,6 +25,7 @@
 #include <Wire.h>                          //Include the Wire.h library so we can communicate with the gyro.
 #include <EEPROM.h>                        //Include the EEPROM.h library so we can store information onto the EEPROM
 #include <TM1637Display.h>
+
 
 
 
@@ -51,6 +59,7 @@ volatile int receiver_input_channel_1, receiver_input_channel_2, receiver_input_
 int counter_channel_1, counter_channel_2, counter_channel_3, counter_channel_4, loop_counter;
 int esc_1, esc_2, esc_3, esc_4;
 int throttle, battery_voltage;
+float previousThrottle;
 int cal_int, start, gyro_address;
 int receiver_input[5];
 int temperature;
@@ -71,20 +80,45 @@ float angle_roll_acc, angle_pitch_acc, angle_pitch, angle_roll;
 boolean gyro_angles_set;
 
 
-//DISPLAY
+// DISPLAY
 const int CLK = 3; //Set the CLK pin connection to the display
 const int DIO = 2; //Set the DIO pin connection to the display
+TM1637Display display(CLK, DIO);  //set up the 4-Digit Display.
 int NumStep = 0;  //Variable to interate
 int counterDisplay = 0;
 int rememberStart = 0;
 int currentTime = 0;
 
+const uint8_t SEG_DONE[] = {
+  SEG_B | SEG_C | SEG_D | SEG_E | SEG_G,           // d
+  SEG_A | SEG_B | SEG_C | SEG_D | SEG_E | SEG_F,   // O
+  SEG_C | SEG_E | SEG_G,                           // n
+  SEG_A | SEG_D | SEG_E | SEG_F | SEG_G            // E
+  };
+
+uint8_t segments[12] = {SEG_A, SEG_A, SEG_A, SEG_A, SEG_B, SEG_C, SEG_D, SEG_D, SEG_D, SEG_D, SEG_E, SEG_F};
+
+int activeSegments[12] = {0, 1, 2, 3, 3, 3, 3, 2, 1, 0, 0, 0};
+
+int segmentCounter = 0;
+
+int currentSegment = 0;
+int nextSegment = 1;
+
+// BUZZER
 int buzzerPin = A3;
 int buzzerCounter = 0;
 int buzzerMax = 500;
 boolean below_voltage_threshold = false;
 
-TM1637Display display(CLK, DIO);  //set up the 4-Digit Display.
+// SWITCH
+const byte interruptPinSwitch = A1;
+int last_channel_switch =0;
+int receiver_input_switch = 0;
+int current_time_switch = 0;
+int timer_switch = 0;
+boolean switched = false;
+
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //Setup routine
@@ -100,6 +134,14 @@ void setup(){
   //Start the I2C as master.
 
   pinMode(buzzerPin, OUTPUT);
+
+  pinMode(interruptPinSwitch, INPUT_PULLUP);
+  attachPCINT(digitalPinToPCINT(interruptPinSwitch), calculateSwitchPulse, CHANGE);
+
+ //  pinMode(pinBlink, INPUT_PULLUP);
+
+     // Attach the new PinChangeInterrupt and enable event function below
+
 
   TWBR = 12;       
   //Set the I2C clock speed to 400kHz.
@@ -130,8 +172,17 @@ void setup(){
   }
 
   //Let's take multiple gyro data samples so we can determine the average gyro offset (calibration).
+                                                   
+  
   for (cal_int = 0; cal_int < 2000 ; cal_int ++){                           //Take 2000 readings for calibration.
-    if(cal_int % 15 == 0)digitalWrite(12, !digitalRead(12));                //Change the led status to indicate calibration.
+    if(cal_int % 15 == 0) {
+      digitalWrite(12, !digitalRead(12));               //Change the led status to indicate calibration.
+ //  displayInitLoop();
+    }
+  
+ 
+
+    
     gyro_signalen();                                                        //Read the gyro output.
     gyro_axis_cal[1] += gyro_axis[1];                                       //Ad roll value to gyro_roll_cal.
     gyro_axis_cal[2] += gyro_axis[2];                                       //Ad pitch value to gyro_pitch_cal.
@@ -183,6 +234,9 @@ void setup(){
   //When everything is done, turn off the led.
   digitalWrite(12,LOW);                                                     //Turn off the warning led.
 
+
+  display.setSegments(SEG_DONE);
+  
   digitalWrite(buzzerPin, HIGH);
   delay(200);
   digitalWrite(buzzerPin, LOW);
@@ -306,7 +360,7 @@ void loop(){
   battery_voltage = battery_voltage * 0.92 + (analogRead(0) + 65) * 0.09853;
 
   //Turn on the led if battery voltage is to low.
-  if(battery_voltage < 1330 && battery_voltage > 900) {
+  if(battery_voltage < 1000 && battery_voltage > 600) {
     digitalWrite(12, HIGH);
     below_voltage_threshold = true;
   }
@@ -330,6 +384,8 @@ void loop(){
   throttle = receiver_input_channel_3;                                      //We need the throttle signal as a base signal.
 
   if (start == 2){                                                          //The motors are started.
+
+    
     if (throttle > 1800) throttle = 1800;                                   //We need some room to keep full control at full throttle.
     esc_1 = throttle - pid_output_pitch + pid_output_roll - pid_output_yaw; //Calculate the pulse for esc 1 (front-right - CCW)
     esc_2 = throttle + pid_output_pitch + pid_output_roll + pid_output_yaw; //Calculate the pulse for esc 2 (rear-right - CW)
@@ -351,7 +407,9 @@ void loop(){
     if(esc_1 > 2000)esc_1 = 2000;                                           //Limit the esc-1 pulse to 2000us.
     if(esc_2 > 2000)esc_2 = 2000;                                           //Limit the esc-2 pulse to 2000us.
     if(esc_3 > 2000)esc_3 = 2000;                                           //Limit the esc-3 pulse to 2000us.
-    if(esc_4 > 2000)esc_4 = 2000;                                           //Limit the esc-4 pulse to 2000us.  
+    if(esc_4 > 2000)esc_4 = 2000;                                           //Limit the esc-4 pulse to 2000us.
+
+      
   }
 
   else{
@@ -391,12 +449,20 @@ void loop(){
    rememberStart = 0;
   }
 
-    if(counterDisplay++ == 250) {
+    if(counterDisplay++ == 20) {
+
+    if(switched) {
       int timeAtThisParticularMomentInTime = millis()/1000;
       if(timeAtThisParticularMomentInTime > currentTime) {
-        currentTime = timeAtThisParticularMomentInTime;
-        display.showNumberDec(currentTime); //Display the Variable value; 
+       currentTime = timeAtThisParticularMomentInTime;
+       display.showNumberDec(currentTime); //Display the Variable value; 
       }
+    } else {
+      display.showNumberDec(battery_voltage);  
+      //displayInitLoop();
+    }
+      
+
       
       counterDisplay = 0;
     }
@@ -645,4 +711,52 @@ void set_gyro_registers(){
 
   }  
 }
+
+void displayInitLoop() {
+    uint8_t SEG_SWITCH[] = {
+  0,
+  0,           
+  0,
+  0
+  };
+
+
+  currentSegment = activeSegments[segmentCounter];
+  nextSegment = activeSegments[(segmentCounter + 1)%12];
+  
+
+if(currentSegment != nextSegment) {
+  SEG_SWITCH[currentSegment] = segments[segmentCounter];
+  SEG_SWITCH[nextSegment] = segments[(segmentCounter + 1)%12];
+} else {
+  SEG_SWITCH[currentSegment] = segments[segmentCounter] | segments[(segmentCounter + 1)%12];  
+}
+  
+
+  display.setSegments(SEG_SWITCH);
+  segmentCounter = (segmentCounter + 1)%12;
+}
+
+void calculateSwitchPulse() {
+  // Switch Led state
+
+  current_time_switch = micros();
+  //Channel 1=========================================
+  if(digitalRead(interruptPinSwitch)){                                                     //Is input 8 high?
+    if(last_channel_switch == 0){                                                //Input 8 changed from 0 to 1.
+      last_channel_switch = 1;                                                   //Remember current input state.
+      timer_switch = current_time_switch;                                               //Set timer_1 to current_time.
+    }
+  }
+  else if(last_channel_switch == 1){                                             //Input 8 is not high and changed from 1 to 0.
+    last_channel_switch = 0;                                                     //Remember current input state.
+    receiver_input_switch = current_time_switch - timer_switch;                             //Channel 1 is current_time - timer_1.
+  }
+
+  if(receiver_input_switch > 1900) switched = true;
+  else switched = false;
+  
+}
+
+
 
