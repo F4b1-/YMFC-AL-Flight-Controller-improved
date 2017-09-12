@@ -24,4 +24,4 @@ Head over to https://fabiangand.com/categories/drone/ for more.
 
 
 
-_Please note: You are solely responsible for your own safety._
+_Please note: You are solely responsible for your own safety. Code has not been tested extensively._
