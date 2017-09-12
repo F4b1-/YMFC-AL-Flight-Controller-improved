@@ -5,7 +5,7 @@ The code extends the work of Joop Brokking (http://www.brokking.net/ymfc-al_main
 Upgrades
 ------
 
-After building the quadrocopter I have added some minor upgrades:
+After building the quadrocopter I have made a few upgrades:
 
 4-digit display
 ------
