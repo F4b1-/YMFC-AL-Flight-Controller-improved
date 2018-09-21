@@ -1,4 +1,7 @@
 # YMFC-AL-Flight-Controller-improved
+
+_Please note: You are solely responsible for your own safety. Code has not been tested extensively._
+
 The code extends the work of Joop Brokking (http://www.brokking.net/ymfc-al_main.html). This repository contains the flight controller of the arduino based self-leveling drone.
 
 Upgrades
@@ -23,5 +26,3 @@ I also addedd a buzzer to indicate that calibration is finished and the motors a
 Head over to https://fabiangand.net/categories/drone/ for more.
 
 
-
-_Please note: You are solely responsible for your own safety. Code has not been tested extensively._
